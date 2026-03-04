@@ -1,0 +1,6 @@
+[build]
+# Uncomment and set to number of cores if needed
+# jobs = 8
+
+[alias]
+lint = "clippy -- -D warnings"
