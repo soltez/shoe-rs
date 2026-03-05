@@ -6,8 +6,12 @@ description = "Cactus Kev's playing card dealing shoe library for Rust"
 license = "LGPL-3.0"
 
 [dependencies]
+num-derive = "0.4.2"
+num-traits = "0.2.19"
 
 [dev-dependencies]
+rstest = "0.25"
+rstest_reuse = "0.7"
 
 [profile.release]
 opt-level = 3
