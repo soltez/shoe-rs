@@ -187,10 +187,18 @@ mod suit_tests {
 /// following bit layout:
 ///
 /// ```text
-/// Bits 31–16  one-hot rank flag (bit 16+rank_index set)
-/// Bits 15–12  one-hot suit nibble (Spade=1, Heart=2, Diamond=4, Club=8)
-/// Bits 11– 8  face value (2–14)
-/// Bits  7– 0  rank prime (2, 3, 5, … 41)
+/// An integer is made up of four bytes.  The high-order bytes are
+/// used to hold the rank bit pattern, whereas the low-order bytes
+/// hold the suit/rank/prime value of the card.
+///
+/// +--------+--------+--------+--------+
+/// |xxxbbbbb|bbbbbbbb|cdhsrrrr|xxpppppp|
+/// +--------+--------+--------+--------+
+///
+/// Bits 28–16  b = bit turned on depending on rank of card
+/// Bits 15–12  cdhs = suit of card (bit turned on based on suit of card)
+/// Bits 11– 8  r = rank of card (deuce=2,trey=3,four=4,five=5,...,ace=14)
+/// Bits  5– 0  p = prime number of rank (deuce=2,trey=3,four=5,...,ace=41)
 /// ```
 ///
 /// Variants are named `Card<Rank><Suit>` where rank uses its conventional
@@ -290,7 +298,7 @@ impl CardInt {
 }
 
 #[cfg(test)]
-mod cactus_kev_card_tests {
+mod card_integer_tests {
     use super::*;
     use rstest::rstest;
     use rstest_reuse::{self, *};
