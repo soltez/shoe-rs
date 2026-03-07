@@ -1,42 +1,44 @@
 use num_traits::FromPrimitive;
 use num_derive::FromPrimitive;
 
-const PRIMES: [u8; 13] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41];
+const PRIMES: [u8; 15] = [0, 0, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41];
 
-/// The rank of a playing card, ordered from lowest (Deuce) to highest (Ace).
+/// The rank of a playing card, or the special cut-card sentinel.
 ///
-/// The discriminant value is used as an index into the `PRIMES` table and to
-/// compute the card's face value and activate the one-hot bit position
-/// in the upper 16 bits of the Cactus Kev encoding.
+/// The discriminant value is used as an index into the `PRIMES` table and is
+/// stored in the rank field (bits 8–11) of the Cactus Kev integer.
+/// The `Cut` variant (discriminant 0) produces an all-zero bit pattern.
 #[repr(u8)]
 #[derive(FromPrimitive, PartialEq, Debug, Clone, Copy)]
 pub enum Rank {
+    /// Cut (X)
+    Cut     = 0,
     /// Two (2)
-    Deuce   = 0,
+    Deuce   = 2,
     /// Three (3)
-    Trey    = 1,
+    Trey    = 3,
     /// Four (4)
-    Four    = 2,
+    Four    = 4,
     /// Five (5)
-    Five    = 3,
+    Five    = 5,
     /// Six (6)
-    Six     = 4,
+    Six     = 6,
     /// Seven (7)
-    Seven   = 5,
+    Seven   = 7,
     /// Eight (8)
-    Eight   = 6,
+    Eight   = 8,
     /// Nine (9)
-    Nine    = 7,
+    Nine    = 9,
     /// Ten (T)
-    Ten     = 8,
+    Ten     = 10,
     /// Jack (J)
-    Jack    = 9,
+    Jack    = 11,
     /// Queen (Q)
-    Queen   = 10,
+    Queen   = 12,
     /// King (K)
-    King    = 11,
+    King    = 13,
     /// Ace (A)
-    Ace     = 12,
+    Ace     = 14,
 }
 
 impl Rank {
@@ -44,32 +46,29 @@ impl Rank {
     ///
     /// Primes are used in the Cactus Kev encoding so that any hand can
     /// be identified by the product of its ranks' primes, enabling fast lookup.
-    /// Values range from 2 (Deuce) to 41 (Ace).
+    /// Values range from 2 (Deuce) to 41 (Ace). Returns 0 for `Cut`.
     pub fn prime(self) -> u32 {
         PRIMES[self as usize] as u32
     }
 
-    /// Returns the face value of this rank (2–14).
-    ///
-    /// Stored in bits 8–11 of the Cactus Kev card integer.
-    pub fn value(self) -> u32 {
-        2 + self as u32
-    }
-
     /// Returns a one-hot bitmask for this rank's position.
     ///
-    /// Shifted left by 16 and placed in the upper 16 bits of the Cactus Kev
-    /// card integer, allowing straight detection.
+    /// Computes `(1 << discriminant) >> 2` so that Deuce (discriminant 2)
+    /// maps to bit 0, up to Ace (discriminant 14) at bit 12. The result is
+    /// shifted left by 16 into the upper bits of the Cactus Kev integer for
+    /// straight detection. Returns 0 for `Cut`.
     fn onehot(self) -> u32 {
-        1 << self as u32
+        1 << self as u32 >> 2
     }
 
     /// Parses a single character into a `Rank`.
     ///
-    /// Accepts both upper- and lowercase letters (`A`/`a` through `2`), plus
-    /// `T`/`t` for Ten. Returns `None` for any unrecognised character.
+    /// Accepts upper and lowercase alphanumeric card rank letters
+    /// (`A`/`a` through `9`), plus `X`/`x` for the cut card. Returns `None`
+    //  for any unrecognised character.
     pub fn from_char(value: char) -> Option<Self> {
         match value {
+            'X' | 'x'   => Some(Rank::Cut),
             'A' | 'a'   => Some(Rank::Ace),
             'K' | 'k'   => Some(Rank::King),
             'Q' | 'q'   => Some(Rank::Queen),
@@ -94,6 +93,8 @@ mod rank_tests {
     use rstest::rstest;
 
     #[rstest]
+    #[case('X', Some(Rank::Cut))]
+    #[case('x', Some(Rank::Cut))]
     #[case('A', Some(Rank::Ace))]
     #[case('a', Some(Rank::Ace))]
     #[case('K', Some(Rank::King))]
@@ -118,14 +119,16 @@ mod rank_tests {
     }
 }
 
-/// The suit of a playing card.
+/// The suit of a playing card, or the special cut-card sentinel.
 ///
-/// The discriminant is a one-hot nibble stored in bits 12–15 of the Cactus Kev
-/// card integer, so flush detection can be tested with a
-/// single bitwise AND.
+/// For the four standard suits the discriminant is a one-hot nibble stored in
+/// bits 12–15 of the Cactus Kev card integer, so flush detection can be tested
+/// with a single bitwise AND. `Cut` uses discriminant `0x0`.
 #[repr(u8)]
 #[derive(FromPrimitive, PartialEq, Debug)]
 pub enum Suit {
+    /// Cut Card
+    Cut     = 0x0,
     /// Spades (♠)
     Spade   = 0x1,
     /// Hearts (♥)
@@ -139,11 +142,12 @@ pub enum Suit {
 impl Suit {
     /// Parses a single character into a `Suit`.
     ///
-    /// Accepts Unicode suit symbols (`♠ ♤ ♥ ♡ ♦ ♢ ♣ ♧`) as well as ASCII
-    /// letters (`S`/`s`, `H`/`h`, `D`/`d`, `C`/`c`). Returns `None` for any
-    /// unrecognised character.
+    /// Accepts unicode suit symbols (`♠ ♤ ♥ ♡ ♦ ♢ ♣ ♧`), ASCII letters
+    /// (`S`/`s`, `H`/`h`, `D`/`d`, `C`/`c`), and `X`/`x` for the cut card.
+    /// Returns `None` for any unrecognised character.
     pub fn from_char(value: char) -> Option<Self> {
         match value {
+            'X' | 'x'             => Some(Suit::Cut),
             '♤' | '♠' | 'S' | 's' => Some(Suit::Spade),
             '♡' | '♥' | 'H' | 'h' => Some(Suit::Heart),
             '♢' | '♦' | 'D' | 'd' => Some(Suit::Diamond),
@@ -159,6 +163,8 @@ mod suit_tests {
     use rstest::rstest;
 
     #[rstest]
+    #[case('X', Some(Suit::Cut))]
+    #[case('x', Some(Suit::Cut))]
     #[case('♤', Some(Suit::Spade))]
     #[case('♠', Some(Suit::Spade))]
     #[case('S', Some(Suit::Spade))]
@@ -181,31 +187,30 @@ mod suit_tests {
     }
 }
 
-/// A playing card represented as a 32-bit integer using the Cactus Kev encoding.
+/// A playing card (or cut card) represented as a 32-bit integer using the
+/// Cactus Kev encoding.
 ///
 /// Each variant encodes a unique (rank, suit) pair in a single `u32` with the
 /// following bit layout:
 ///
 /// ```text
-/// An integer is made up of four bytes.  The high-order bytes are
-/// used to hold the rank bit pattern, whereas the low-order bytes
-/// hold the suit/rank/prime value of the card.
-///
 /// +--------+--------+--------+--------+
 /// |xxxbbbbb|bbbbbbbb|cdhsrrrr|xxpppppp|
 /// +--------+--------+--------+--------+
 ///
-/// Bits 28–16  b = bit turned on depending on rank of card
-/// Bits 15–12  cdhs = suit of card (bit turned on based on suit of card)
-/// Bits 11– 8  r = rank of card (deuce=2,trey=3,four=4,five=5,...,ace=14)
-/// Bits  5– 0  p = prime number of rank (deuce=2,trey=3,four=5,...,ace=41)
+/// Bits 28–16  b = one-hot rank flag (Deuce=bit 0 … Ace=bit 12; 0 for Cut)
+/// Bits 15–12  cdhs = suit nibble (Spade=1,Heart=2,Diamond=4,Club=8; 0 for Cut)
+/// Bits 11– 8  r = rank face value (Deuce=2,Trey=3,...,Ace=14; 0 for Cut)
+/// Bits  5– 0  p = rank prime (Deuce=2,Trey=3,Four=5,...,Ace=41; 0 for Cut)
 /// ```
 ///
-/// Variants are named `Card<Rank><Suit>` where rank uses its conventional
-/// character (`A K Q J T 9 … 2`) and suit uses its initial (`s h d c`).
+/// Playing card variants are named `Card<Rank><Suit>` where rank uses its
+/// conventional character (`A K Q J T 9 … 2`) and suit uses its initial
+/// (`s h d c`). The cut card `CardXx` is the all-zeros pattern `0x00000000`.
 #[repr(u32)]
 #[derive(FromPrimitive, PartialEq, Debug)]
 pub enum CardInt{
+    CardXx = 0b0000_0000_0000_0000_0000_0000_0000_0000,
     CardAs = 0b0001_0000_0000_0000_0001_1110_0010_1001,
     CardKs = 0b0000_1000_0000_0000_0001_1101_0010_0101,
     CardQs = 0b0000_0100_0000_0000_0001_1100_0001_1111,
@@ -261,7 +266,8 @@ pub enum CardInt{
 }
 
 impl CardInt {
-    /// Constructs a `CardInt` from a two-character string such as `"As"` or `"Td"`.
+    /// Constructs a `CardInt` from a two-character string such as `"As"`,
+    /// `"Td"`, or `"Xx"` for the cut card.
     ///
     /// The first character is parsed as a [`Rank`] via [`Rank::from_char`] and
     /// the second as a [`Suit`] via [`Suit::from_char`]. Returns `None` if
@@ -280,20 +286,24 @@ impl CardInt {
         let _: CardInt = match chars.next() {
             Some(_) => return None,
             None => {
-                let bit_pattern: u32 = rank.prime() | rank.value() << 8 | (suit as u32) << 12 | rank.onehot() << 16;
+                let bit_pattern: u32 = rank.prime() | (rank as u32) << 8 | (suit as u32) << 12 | rank.onehot() << 16;
                 return CardInt::from_u32(bit_pattern)
             }
         };
     }
 
-    /// Extracts the [`Rank`] from this card's face-value field (bits 8–11).
+    /// Extracts the [`Rank`] from this card's rank field (bits 8–11).
+    ///
+    /// Returns [`Rank::Cut`] for `CardXx`.
     pub fn rank(self) -> Rank {
-        Rank::from_u8(((self as u32 >> 8) - 2) as u8 & 0xF).unwrap()
+        Rank::from_u8((self as u32 >> 8 & 0xF) as u8).unwrap()
     }
 
     /// Extracts the [`Suit`] from this card's suit nibble (bits 12–15).
+    ///
+    /// Returns [`Suit::Cut`] for `CardXx`.
     pub fn suit(self) -> Suit {
-        Suit::from_u16((self as u32 >> 12 & 0xF) as u16).unwrap()
+        Suit::from_u8((self as u32 >> 12 & 0xF) as u8).unwrap()
     }
 }
 
@@ -308,12 +318,14 @@ mod card_integer_tests {
     #[case(0b00000000_00001000_00010101_00000111, CardInt::Card5s)]
     #[case(0b00000010_00000000_10001011_00011101, CardInt::CardJc)]
     #[case(0b00000100_00000000_10001100_00011111, CardInt::CardQc)]
+    #[case(0b00000000_00000000_00000000_00000000, CardInt::CardXx)]
     fn bit_pattern_example(#[case] input: u32, #[case] expected: CardInt) {
         assert_eq!(CardInt::from_u32(input), Some(expected));
     }
 
     #[template]
     #[rstest]
+    #[case(Rank::Cut,   Suit::Cut,      CardInt::CardXx)]
     #[case(Rank::Ace,   Suit::Spade,    CardInt::CardAs)]
     #[case(Rank::King,  Suit::Spade,    CardInt::CardKs)]
     #[case(Rank::Queen, Suit::Spade,    CardInt::CardQs)]
@@ -370,7 +382,7 @@ mod card_integer_tests {
 
     #[apply(all_cases)]
     fn binary_literal_integrity(rank: Rank, suit: Suit, card: CardInt) {
-        let bit_pattern: u32 = rank.prime() | rank.value() << 8 | (suit as u32) << 12 | rank.onehot() << 16;
+        let bit_pattern: u32 = rank.prime() | (rank as u32) << 8 | (suit as u32) << 12 | rank.onehot() << 16;
         let actual: CardInt = CardInt::from_u32(bit_pattern).unwrap();
         assert_eq!(actual, card);
     }
@@ -386,6 +398,7 @@ mod card_integer_tests {
     }
 
     #[rstest]
+    #[case("Xx",    Some(CardInt::CardXx))]
     #[case("As",    Some(CardInt::CardAs))]
     #[case("Ks",    Some(CardInt::CardKs))]
     #[case("Qs",    Some(CardInt::CardQs))]
