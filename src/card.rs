@@ -47,14 +47,14 @@ impl Rank {
     /// Primes are used in the Cactus Kev encoding so that any hand can
     /// be identified by the product of its ranks' primes, enabling fast lookup.
     /// Values range from 2 (Deuce) to 41 (Ace). Returns 0 for `Cut`.
-    pub fn prime(self) -> u32 {
+    fn prime(self) -> u32 {
         PRIMES[self as usize] as u32
     }
 
     /// Returns a one-hot bitmask for this rank's position.
     ///
     /// Computes `(1 << discriminant) >> 2` so that Deuce (discriminant 2)
-    /// maps to bit 0, up to Ace (discriminant 14) at bit 12. The result is
+    /// maps to 0x1, up to Ace (discriminant 14) at 0x1000. The result is
     /// shifted left by 16 into the upper bits of the Cactus Kev integer for
     /// straight detection. Returns 0 for `Cut`.
     fn onehot(self) -> u32 {
@@ -66,7 +66,7 @@ impl Rank {
     /// Accepts upper and lowercase alphanumeric card rank letters
     /// (`A`/`a` through `9`), plus `X`/`x` for the cut card. Returns `None`
     //  for any unrecognised character.
-    pub fn from_char(value: char) -> Option<Self> {
+    fn from_char(value: char) -> Option<Self> {
         match value {
             'X' | 'x'   => Some(Rank::Cut),
             'A' | 'a'   => Some(Rank::Ace),
@@ -82,7 +82,7 @@ impl Rank {
             '4'         => Some(Rank::Four),
             '3'         => Some(Rank::Trey),
             '2'         => Some(Rank::Deuce),
-            _ => None,
+            _           => None,
         }
     }
 }
@@ -145,7 +145,7 @@ impl Suit {
     /// Accepts unicode suit symbols (`♠ ♤ ♥ ♡ ♦ ♢ ♣ ♧`), ASCII letters
     /// (`S`/`s`, `H`/`h`, `D`/`d`, `C`/`c`), and `X`/`x` for the cut card.
     /// Returns `None` for any unrecognised character.
-    pub fn from_char(value: char) -> Option<Self> {
+    fn from_char(value: char) -> Option<Self> {
         match value {
             'X' | 'x'             => Some(Suit::Cut),
             '♤' | '♠' | 'S' | 's' => Some(Suit::Spade),
@@ -198,7 +198,7 @@ mod suit_tests {
 /// |xxxbbbbb|bbbbbbbb|cdhsrrrr|xxpppppp|
 /// +--------+--------+--------+--------+
 ///
-/// Bits 28–16  b = one-hot rank flag (Deuce=bit 0 … Ace=bit 12; 0 for Cut)
+/// Bits 28–16  b = one-hot rank flag (Deuce=0x1,Trey=0x2,...,Ace=0x1000; 0 for Cut)
 /// Bits 15–12  cdhs = suit nibble (Spade=1,Heart=2,Diamond=4,Club=8; 0 for Cut)
 /// Bits 11– 8  r = rank face value (Deuce=2,Trey=3,...,Ace=14; 0 for Cut)
 /// Bits  5– 0  p = rank prime (Deuce=2,Trey=3,Four=5,...,Ace=41; 0 for Cut)
@@ -283,13 +283,16 @@ impl CardInt {
             None => return None,
             Some(s) => Suit::from_char(s)?,
         };
-        let _: CardInt = match chars.next() {
+        let card: CardInt = match chars.next() {
             Some(_) => return None,
-            None => {
-                let bit_pattern: u32 = rank.prime() | (rank as u32) << 8 | (suit as u32) << 12 | rank.onehot() << 16;
-                return CardInt::from_u32(bit_pattern)
-            }
+            None => Self::_new(rank, suit)
         };
+        Some(card)
+    }
+
+    fn _new(rank: Rank, suit: Suit) -> CardInt {
+        let bit_pattern: u32 = rank.prime() | (rank as u32) << 8 | (suit as u32) << 12 | rank.onehot() << 16;
+        CardInt::from_u32(bit_pattern).unwrap()
     }
 
     /// Extracts the [`Rank`] from this card's rank field (bits 8–11).
@@ -382,8 +385,7 @@ mod card_integer_tests {
 
     #[apply(all_cases)]
     fn binary_literal_integrity(rank: Rank, suit: Suit, card: CardInt) {
-        let bit_pattern: u32 = rank.prime() | (rank as u32) << 8 | (suit as u32) << 12 | rank.onehot() << 16;
-        let actual: CardInt = CardInt::from_u32(bit_pattern).unwrap();
+        let actual: CardInt = CardInt::_new(rank, suit);
         assert_eq!(actual, card);
     }
 
