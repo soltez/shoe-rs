@@ -1,5 +1,6 @@
 use num_traits::FromPrimitive;
 use num_derive::FromPrimitive;
+use thiserror::Error;
 
 const PRIMES: [u8; 15] = [0, 0, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41];
 
@@ -63,12 +64,10 @@ impl Rank {
 
     /// Parses a single character into a `Rank`.
     ///
-    /// Accepts upper and lowercase alphanumeric card rank letters
-    /// (`A`/`a` through `9`), plus `X`/`x` for the cut card. Returns `None`
-    //  for any unrecognised character.
+    /// Accepts upper and lowercase alphanumeric letters (`A`/`a` through `9`).
+    /// Returns `None` for any unrecognised character.
     fn from_char(value: char) -> Option<Self> {
         match value {
-            'X' | 'x'   => Some(Rank::Cut),
             'A' | 'a'   => Some(Rank::Ace),
             'K' | 'k'   => Some(Rank::King),
             'Q' | 'q'   => Some(Rank::Queen),
@@ -93,8 +92,6 @@ mod rank_tests {
     use rstest::rstest;
 
     #[rstest]
-    #[case('X', Some(Rank::Cut))]
-    #[case('x', Some(Rank::Cut))]
     #[case('A', Some(Rank::Ace))]
     #[case('a', Some(Rank::Ace))]
     #[case('K', Some(Rank::King))]
@@ -142,12 +139,11 @@ pub enum Suit {
 impl Suit {
     /// Parses a single character into a `Suit`.
     ///
-    /// Accepts unicode suit symbols (`♠ ♤ ♥ ♡ ♦ ♢ ♣ ♧`), ASCII letters
-    /// (`S`/`s`, `H`/`h`, `D`/`d`, `C`/`c`), and `X`/`x` for the cut card.
-    /// Returns `None` for any unrecognised character.
+    /// Accepts Unicode suit symbols (`♠ ♤ ♥ ♡ ♦ ♢ ♣ ♧`) as well as ASCII
+    /// letters (`S`/`s`, `H`/`h`, `D`/`d`, `C`/`c`). Returns `None` for any
+    /// unrecognised character.
     fn from_char(value: char) -> Option<Self> {
         match value {
-            'X' | 'x'             => Some(Suit::Cut),
             '♤' | '♠' | 'S' | 's' => Some(Suit::Spade),
             '♡' | '♥' | 'H' | 'h' => Some(Suit::Heart),
             '♢' | '♦' | 'D' | 'd' => Some(Suit::Diamond),
@@ -163,8 +159,6 @@ mod suit_tests {
     use rstest::rstest;
 
     #[rstest]
-    #[case('X', Some(Suit::Cut))]
-    #[case('x', Some(Suit::Cut))]
     #[case('♤', Some(Suit::Spade))]
     #[case('♠', Some(Suit::Spade))]
     #[case('S', Some(Suit::Spade))]
@@ -265,6 +259,18 @@ pub enum CardInt{
     Card2c = 0b0000_0000_0000_0001_1000_0010_0000_0010,
 }
 
+#[derive(Debug, Error)]
+pub enum CardError {
+    #[error("invalid rank: '{0}'")]
+    InvalidRank(char),
+
+    #[error("invalid suit: '{0}'")]
+    InvalidSuit(char),
+
+    #[error("invalid input: '{0}'")]
+    InvalidInput(String),
+}
+
 impl CardInt {
     /// Constructs a `CardInt` from a two-character string such as `"As"`,
     /// `"Td"`, or `"Xx"` for the cut card.
@@ -273,21 +279,17 @@ impl CardInt {
     /// the second as a [`Suit`] via [`Suit::from_char`]. Returns `None` if
     /// either character is unrecognised or the string is not exactly two
     /// characters long.
-    pub fn new(index: &str) -> Option<Self> {
-        let mut chars = index.chars();
-        let rank: Rank = match chars.next() {
-            None => return None,
-            Some(r) => Rank::from_char(r)?,
-        };
-        let suit: Suit = match chars.next() {
-            None => return None,
-            Some(s) => Suit::from_char(s)?,
-        };
-        let card: CardInt = match chars.next() {
-            Some(_) => return None,
-            None => Self::_new(&rank, &suit)
-        };
-        Some(card)
+    pub fn new(s: &str) -> Result<Self, CardError> {
+        let invalid = || CardError::InvalidInput(s.to_string());
+        let mut chars = s.chars();
+        let rank: Rank = chars.next()
+            .ok_or_else(invalid)
+            .and_then(|c| Rank::from_char(c).ok_or(CardError::InvalidRank(c)))?;
+        let suit: Suit = chars.next()
+            .ok_or_else(invalid)
+            .and_then(|c| Suit::from_char(c).ok_or(CardError::InvalidSuit(c)))?;
+        chars.next().map_or(Ok(()), |_| Err(invalid()))?;
+        Ok(Self::_new(&rank, &suit))
     }
 
     fn _new(rank: &Rank, suit: &Suit) -> CardInt {
@@ -400,7 +402,6 @@ mod card_integer_tests {
     }
 
     #[rstest]
-    #[case("Xx",    Some(CardInt::CardXx))]
     #[case("As",    Some(CardInt::CardAs))]
     #[case("Ks",    Some(CardInt::CardKs))]
     #[case("Qs",    Some(CardInt::CardQs))]
@@ -453,10 +454,35 @@ mod card_integer_tests {
     #[case("4c",    Some(CardInt::Card4c))]
     #[case("3c",    Some(CardInt::Card3c))]
     #[case("2c",    Some(CardInt::Card2c))]
-    #[case("AsKs",  None)]
-    #[case("K",     None)]
-    #[case("",      None)]
     fn new(#[case] input: &str, #[case] expected: Option<CardInt>) {
-        assert_eq!(CardInt::new(input), expected);
+        assert_eq!(CardInt::new(input).ok(), expected);
+    }
+
+    #[rstest]
+    #[case("AsKs")]
+    #[case("K")]
+    #[case("")]
+    fn new_invalid_input(#[case] input: &str) {
+        let result = CardInt::new(input);
+        let expected = format!("invalid input: '{}'", input);
+        assert_eq!(result.unwrap_err().to_string(), expected);
+    }
+
+    #[rstest]
+    #[case("Xc")]
+    #[case(" D")]
+    #[case("x")]
+    fn new_invalid_rank(#[case] input: &str) {
+        let result = CardInt::new(input);
+        assert!(result.unwrap_err().to_string().starts_with("invalid rank"));
+    }
+
+    #[rstest]
+    #[case("ax")]
+    #[case("2 ")]
+    #[case("jx2")]
+    fn new_invalid_suit(#[case] input: &str) {
+        let result = CardInt::new(input);
+        assert!(result.unwrap_err().to_string().starts_with("invalid suit"));
     }
 }
