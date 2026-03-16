@@ -1,0 +1,23 @@
+[package]
+name = "shoe-rs"
+version = "0.1.0"
+edition = "2024"
+description = "Playing card dealing shoe library"
+license = "LGPL-3.0-only"
+repository = "https://github.com/soltez/shoe-rs"
+keywords = ["cards", "blackjack", "baccarat", "shoe", "casino"]
+categories = ["games"]
+
+[lib]
+name = "shoe"
+
+[dependencies]
+
+[dev-dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
