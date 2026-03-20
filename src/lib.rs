@@ -225,12 +225,15 @@ impl From<Vec<Card>> for Shoe {
     /// # Panics
     /// Panics if the vector contains zero or more than one [`Card::Cut`].
     fn from(cards: Vec<Card>) -> Self {
-        let cut_pos = cards
+        let mut cut_iter = cards
             .iter()
             .enumerate()
-            .filter_map(|(i, &c)| (c == Card::Cut).then_some(i))
-            .reduce(|_, _| panic!("vector must contain exactly one cut card"))
-            .expect("vector must contain a cut card");
+            .filter_map(|(i, &c)| (c == Card::Cut).then_some(i));
+        let cut_pos = cut_iter.next().expect("vector must contain a cut card");
+        assert!(
+            cut_iter.next().is_none(),
+            "vector must contain exactly one cut card"
+        );
         let n = cards.len();
         Shoe {
             cards,
