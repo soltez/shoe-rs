@@ -32,6 +32,7 @@
 //! ```
 
 use kev::CardInt;
+use num_traits::cast::ToPrimitive;
 use rand::RngExt;
 use rand::rng;
 use rand::seq::SliceRandom;
@@ -175,19 +176,10 @@ impl Shoe {
     ///
     /// # Panics
     /// Panics if `pen` is not in the range `[0.5, 1.0]`.
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss
-    )]
     pub fn shuffle_and_cut(&mut self, pen: f32) {
         assert!(
-            pen >= 0.5,
-            "penetration ratio must be greater than or equal to 0.5"
-        );
-        assert!(
-            pen <= 1.0,
-            "penetration ratio must be less than or equal to 1.0"
+            (0.5..=1.0).contains(&pen),
+            "penetration ratio must be in the range [0.5, 1.0]"
         );
 
         let mut rng = rng();
@@ -195,8 +187,12 @@ impl Shoe {
             self.cards.shuffle(&mut rng);
         }
 
-        let shoe_len = (self.cards.len() - 1) as f32;
-        let cut_pos = ((1.0 - pen) * shoe_len).floor() as usize;
+        let shoe_len = (self.cards.len() - 1)
+            .to_f32()
+            .expect("shoe length fits in f32");
+        let cut_pos = ((1.0 - pen) * shoe_len)
+            .to_usize()
+            .expect("cut position fits in usize");
         if let Some(i) = self.cards.iter().position(|&x| x == Card::Cut) {
             self.cards.swap(i, cut_pos);
         }
@@ -308,14 +304,14 @@ mod shoe_tests {
     }
 
     #[test]
-    #[should_panic(expected = "greater than or equal to 0.5")]
+    #[should_panic(expected = "penetration ratio must be in the range [0.5, 1.0]")]
     fn low_pen_panics() {
         let mut shoe = Shoe::new(1);
         shoe.shuffle_and_cut(0.49);
     }
 
     #[test]
-    #[should_panic(expected = "less than or equal to 1.0")]
+    #[should_panic(expected = "penetration ratio must be in the range [0.5, 1.0]")]
     fn high_pen_panics() {
         let mut shoe = Shoe::new(1);
         shoe.shuffle_and_cut(1.01);

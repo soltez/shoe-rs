@@ -276,6 +276,7 @@ name = "shoe-rs"
 version = "0.1.0"
 dependencies = [
  "kev-rs",
+ "num-traits",
  "rand",
 ]
 

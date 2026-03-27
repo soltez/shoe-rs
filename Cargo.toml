@@ -13,6 +13,7 @@ name = "shoe"
 
 [dependencies]
 kev-rs = "0.1.2"
+num-traits = "0.2.19"
 rand = "0.10.0"
 
 [dev-dependencies]
