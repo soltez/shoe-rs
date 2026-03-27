@@ -233,6 +233,12 @@ impl Shoe {
         assert!(self.cut_pos + n <= self.cursor, "burning too many cards");
         self.cursor -= n;
     }
+
+    /// Returns the number of cards that remain in the shoe after the cut card.
+    #[must_use]
+    pub fn stub_size(&self) -> usize {
+        self.cut_pos
+    }
 }
 
 impl From<Vec<Card>> for Shoe {
@@ -420,6 +426,48 @@ mod shoe_tests {
         assert!(shoe.has_reached_cut_card()); // 2 = 2
         assert!(shoe.deal().is_some()); // cursor = 1
         assert!(shoe.has_reached_cut_card()); // 1 < 2
+    }
+
+    #[test]
+    fn stub_size_is_zero_before_cut() {
+        let shoe = Shoe::new(1);
+        assert_eq!(shoe.stub_size(), 0);
+    }
+
+    #[test]
+    fn stub_size_reflects_penetration() {
+        // 1-deck shoe: last index = 52; cut_pos = (1.0 - 0.75) * 52 = 13
+        let mut shoe = Shoe::new(1);
+        shoe.cut(0.75);
+        assert_eq!(shoe.stub_size(), 13);
+    }
+
+    #[test]
+    fn stub_size_is_zero_at_full_penetration() {
+        let mut shoe = Shoe::new(1);
+        shoe.cut(1.0);
+        assert_eq!(shoe.stub_size(), 0);
+    }
+
+    #[test]
+    fn stub_size_is_zero_after_shuffle() {
+        let mut shoe = Shoe::new(1);
+        shoe.cut(0.75);
+        shoe.shuffle(1);
+        assert_eq!(shoe.stub_size(), 0);
+    }
+
+    #[test]
+    fn stub_size_from_vec() {
+        // [A, Cut, B, C] -> cut_pos = 1, stub_size = 1
+        let cards = vec![
+            Card::Play(CardInt::CardAs),
+            Card::Cut,
+            Card::Play(CardInt::CardKs),
+            Card::Play(CardInt::CardQs),
+        ];
+        let shoe = Shoe::from(cards);
+        assert_eq!(shoe.stub_size(), 1);
     }
 
     #[test]
