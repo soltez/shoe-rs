@@ -14,20 +14,22 @@
 //! # Example
 //!
 //! ```
-//! use shoe::{Card, Shoe, DECK};
+//! use arrayvec::ArrayVec;
+//! use shoe::{Card, Shoe, DECK, MAX_SHOE_SIZE};
 //!
-//! // Build a 6-deck shoe with the cut card at 75% penetration (25% from front).
-//! let mut cards: Vec<Card> = Vec::new();
+//! // ArrayVec is used here, but any type with as_slice() works (e.g. heapless::Vec, plain arrays).
+//! // Build a 6-deck shoe, shuffle with your own RNG, place the cut card at 75% penetration.
+//! let mut cards: ArrayVec<Card, MAX_SHOE_SIZE> = ArrayVec::new();
 //! for _ in 0..6 {
-//!     cards.extend_from_slice(&DECK);
+//!     cards.try_extend_from_slice(&DECK).unwrap();
 //! }
-//! // Caller shuffles cards here with their own RNG, then places the cut card.
+//! // Shuffle cards here with your own RNG, then place the cut card.
 //! let cut_idx = cards.len() / 4;
 //! let last_idx = cards.len();
 //! cards.push(Card::Cut);
 //! cards.swap(cut_idx, last_idx);
 //!
-//! let mut shoe = Shoe::from(cards);
+//! let mut shoe = Shoe::from(cards.as_slice());
 //!
 //! // Deal cards until the cut card is reached.
 //! while !shoe.has_reached_cut_card() {
@@ -37,7 +39,14 @@
 //! }
 //! ```
 
+use arrayvec::ArrayVec;
 use kev::CardInt;
+
+/// Maximum number of decks supported in a single shoe.
+pub const MAX_DECKS: usize = 8;
+
+/// Maximum number of cards in a shoe: `MAX_DECKS * 52 + 1` (includes the cut card).
+pub const MAX_SHOE_SIZE: usize = MAX_DECKS * 52 + 1;
 
 /// A standard 52-card deck in suit order: spades, hearts, diamonds, clubs.
 pub const DECK: [Card; 52] = [
@@ -110,7 +119,7 @@ pub enum Card {
 
 /// A multi-deck dealing shoe.
 pub struct Shoe {
-    cards: Vec<Card>,
+    cards: ArrayVec<Card, MAX_SHOE_SIZE>,
     cursor: usize,
     cut_pos: usize,
 }
@@ -159,26 +168,31 @@ impl Shoe {
     }
 }
 
-impl From<Vec<Card>> for Shoe {
-    /// Create a [`Shoe`] from an ordered `Vec<Card>`.
+impl From<&[Card]> for Shoe {
+    /// Create a [`Shoe`] from an ordered slice of cards.
     ///
-    /// The vector must contain exactly one [`Card::Cut`], which determines the
+    /// The slice must contain exactly one [`Card::Cut`], which determines the
     /// cut position. The cursor is set to the last index so dealing begins from
-    /// the back of the vector.
+    /// the back of the slice.
     ///
     /// # Panics
-    /// Panics if the vector contains zero or more than one [`Card::Cut`].
-    fn from(cards: Vec<Card>) -> Self {
-        let mut cut_iter = cards
+    /// Panics if the slice contains zero or more than one [`Card::Cut`].
+    /// Panics if the slice exceeds [`MAX_SHOE_SIZE`].
+    fn from(slice: &[Card]) -> Self {
+        let mut cut_iter = slice
             .iter()
             .enumerate()
             .filter_map(|(i, &c)| (c == Card::Cut).then_some(i));
-        let cut_pos = cut_iter.next().expect("vector must contain a cut card");
+        let cut_pos = cut_iter.next().expect("slice must contain a cut card");
         assert!(
             cut_iter.next().is_none(),
-            "vector must contain exactly one cut card"
+            "slice must contain exactly one cut card"
         );
-        let n = cards.len();
+        let n = slice.len();
+        let mut cards: ArrayVec<Card, MAX_SHOE_SIZE> = ArrayVec::new();
+        cards
+            .try_extend_from_slice(slice)
+            .expect("slice fits in shoe");
         Shoe {
             cards,
             cursor: n - 1,
@@ -192,13 +206,13 @@ mod shoe_tests {
     use super::*;
 
     fn make_shoe(num_decks: usize, cut_card_idx: usize) -> Shoe {
-        let mut cards: Vec<Card> = Vec::with_capacity(num_decks * DECK.len() + 1);
+        let mut cards: ArrayVec<Card, MAX_SHOE_SIZE> = ArrayVec::new();
         cards.push(Card::Cut);
         for _ in 0..num_decks {
-            cards.extend_from_slice(&DECK);
+            cards.try_extend_from_slice(&DECK).unwrap();
         }
         cards.swap(0, cut_card_idx);
-        Shoe::from(cards)
+        Shoe::from(cards.as_slice())
     }
 
     #[test]
@@ -247,43 +261,46 @@ mod shoe_tests {
     }
 
     #[test]
-    fn from_vec_initial_state() {
+    fn from_slice_initial_state() {
         // vec: [A, Cut, B]  ->  cursor = 2 (last index), cut_pos = 1
-        let cards = vec![
+        let mut cards: ArrayVec<Card, MAX_SHOE_SIZE> = ArrayVec::new();
+        cards.extend([
             Card::Play(CardInt::CardAs),
             Card::Cut,
             Card::Play(CardInt::CardKs),
-        ];
-        let shoe = Shoe::from(cards);
+        ]);
+        let shoe = Shoe::from(cards.as_slice());
         assert_eq!(shoe.remaining(), 2); // cursor = n - 1 = 2
         assert!(!shoe.has_reached_cut_card()); // cursor(2) > cut_pos(1)
     }
 
     #[test]
-    fn from_vec_deals_in_reverse_order() {
+    fn from_slice_deals_in_reverse_order() {
         // cursor starts at last index and decrements; cards dealt top-down
-        let cards = vec![
+        let mut cards: ArrayVec<Card, MAX_SHOE_SIZE> = ArrayVec::new();
+        cards.extend([
             Card::Play(CardInt::CardAs),
             Card::Cut,
             Card::Play(CardInt::CardKs),
-        ];
-        let mut shoe = Shoe::from(cards);
+        ]);
+        let mut shoe = Shoe::from(cards.as_slice());
         assert_eq!(shoe.deal(), Some(Card::Play(CardInt::CardKs))); // cards[2]
         assert_eq!(shoe.deal(), Some(Card::Cut)); // cards[1]
         assert_eq!(shoe.deal(), None); // cursor = 0
     }
 
     #[test]
-    fn from_vec_has_reached_cut_card_after_dealing_past_cut() {
+    fn from_slice_has_reached_cut_card_after_dealing_past_cut() {
         // [A, B, Cut, C, D]  ->  cursor = 4, cut_pos = 2
-        let cards = vec![
+        let mut cards: ArrayVec<Card, MAX_SHOE_SIZE> = ArrayVec::new();
+        cards.extend([
             Card::Play(CardInt::CardAs),
             Card::Play(CardInt::CardKs),
             Card::Cut,
             Card::Play(CardInt::CardQs),
             Card::Play(CardInt::CardJs),
-        ];
-        let mut shoe = Shoe::from(cards);
+        ]);
+        let mut shoe = Shoe::from(cards.as_slice());
         assert!(!shoe.has_reached_cut_card()); // cursor = 4 > cut_pos = 2
         assert!(shoe.deal().is_some()); // cursor = 3
         assert!(!shoe.has_reached_cut_card()); // 3 > 2
@@ -294,29 +311,32 @@ mod shoe_tests {
     }
 
     #[test]
-    fn stub_size_from_vec() {
+    fn stub_size_from_slice() {
         // [A, Cut, B, C] -> cut_pos = 1, stub_size = 1
-        let cards = vec![
+        let mut cards: ArrayVec<Card, MAX_SHOE_SIZE> = ArrayVec::new();
+        cards.extend([
             Card::Play(CardInt::CardAs),
             Card::Cut,
             Card::Play(CardInt::CardKs),
             Card::Play(CardInt::CardQs),
-        ];
-        let shoe = Shoe::from(cards);
+        ]);
+        let shoe = Shoe::from(cards.as_slice());
         assert_eq!(shoe.stub_size(), 1);
     }
 
     #[test]
-    #[should_panic(expected = "vector must contain a cut card")]
-    fn from_vec_no_cut_panics() {
-        let cards = vec![Card::Play(CardInt::CardAs), Card::Play(CardInt::CardKs)];
-        let _ = Shoe::from(cards);
+    #[should_panic(expected = "slice must contain a cut card")]
+    fn from_slice_no_cut_panics() {
+        let mut cards: ArrayVec<Card, MAX_SHOE_SIZE> = ArrayVec::new();
+        cards.extend([Card::Play(CardInt::CardAs), Card::Play(CardInt::CardKs)]);
+        let _ = Shoe::from(cards.as_slice());
     }
 
     #[test]
-    #[should_panic(expected = "vector must contain exactly one cut card")]
-    fn from_vec_multiple_cuts_panics() {
-        let cards = vec![Card::Cut, Card::Play(CardInt::CardAs), Card::Cut];
-        let _ = Shoe::from(cards);
+    #[should_panic(expected = "slice must contain exactly one cut card")]
+    fn from_slice_multiple_cuts_panics() {
+        let mut cards: ArrayVec<Card, MAX_SHOE_SIZE> = ArrayVec::new();
+        cards.extend([Card::Cut, Card::Play(CardInt::CardAs), Card::Cut]);
+        let _ = Shoe::from(cards.as_slice());
     }
 }
