@@ -13,6 +13,7 @@ name = "shoe"
 
 [dependencies]
 kev-rs = "0.2.0"
+arrayvec = { version = "0.7", default-features = false }
 
 [dev-dependencies]
 
