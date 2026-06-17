@@ -1,3 +1,4 @@
+#![no_std]
 //! Playing card dealing shoe library.
 //!
 //! This crate provides a [`Shoe`] — a multi-deck card dealing shoe as used in

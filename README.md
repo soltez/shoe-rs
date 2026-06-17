@@ -4,6 +4,8 @@ Playing card dealing shoe library for Rust.
 
 A multi-deck card dealing shoe as used in casino table games such as blackjack and baccarat. Deals and burns cards, tracks the cut card position. Shuffling and cut card placement are the caller's responsibility.
 
+`#![no_std]` compatible. No heap allocation — internal storage uses a stack-allocated `ArrayVec`.
+
 ## Usage
 
 ```rust
@@ -36,9 +38,18 @@ while !shoe.has_reached_cut_card() {
 
 - **`Card::Play(CardInt)`** — a standard playing card wrapping a [`kev`](https://crates.io/crates/kev-rs) `CardInt`.
 - **`Card::Cut`** — the cut card used to signal a reshuffle.
+- **`Shoe`** — the dealing shoe; constructed via `Shoe::from(slice)`.
 - **`DECK`** — a `[Card; 52]` constant with all 52 cards in suit order (spades, hearts, diamonds, clubs), ace to two.
 - **`MAX_DECKS`** — maximum number of decks supported (8).
 - **`MAX_SHOE_SIZE`** — maximum number of cards in a shoe (`MAX_DECKS * 52 + 1`).
+
+## Methods
+
+- **`Shoe::from(&[Card])`** — construct a shoe from any slice containing exactly one `Card::Cut`.
+- **`deal() -> Option<Card>`** — deal the next card; returns `None` when the shoe is exhausted.
+- **`burn(n: usize)`** — discard the next `n` cards without returning them.
+- **`has_reached_cut_card() -> bool`** — returns `true` when the cursor is at or past the cut card position.
+- **`stub_size() -> usize`** — number of cards remaining after the cut card.
 
 ## License
 
