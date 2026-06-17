@@ -16,7 +16,7 @@ checksum = "e9d7cbf6ac4ebe6c6d499c71553f3d5aa94a0771fc1add1845d22d628422eef2"
 
 [[package]]
 name = "shoe-rs"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "arrayvec",
  "kev-rs",
