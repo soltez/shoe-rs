@@ -8,17 +8,26 @@
 //! - [`Card`] — a playing card that is either a standard [`Card::Play`] card
 //!   (wrapping a [`kev::CardInt`]) or a [`Card::Cut`] card that marks the
 //!   reshuffle point.
-//! - [`Shoe`] — holds one or more shuffled 52-card decks plus a cut card, and
-//!   exposes methods to deal, burn, and reshuffle.
+//! - [`Shoe`] — holds one or more 52-card decks plus a cut card, and
+//!   exposes methods to deal and burn cards.
 //!
 //! # Example
 //!
 //! ```
-//! use shoe::{Card, Shoe};
+//! use shoe::{Card, Shoe, DECK};
 //!
-//! // Create a 6-deck shoe and place the cut card at 75% penetration.
-//! let mut shoe = Shoe::new(6);
-//! shoe.cut(0.75);
+//! // Build a 6-deck shoe with the cut card at 75% penetration (25% from front).
+//! let mut cards: Vec<Card> = Vec::new();
+//! for _ in 0..6 {
+//!     cards.extend_from_slice(&DECK);
+//! }
+//! // Caller shuffles cards here with their own RNG, then places the cut card.
+//! let cut_idx = cards.len() / 4;
+//! let last_idx = cards.len();
+//! cards.push(Card::Cut);
+//! cards.swap(cut_idx, last_idx);
+//!
+//! let mut shoe = Shoe::from(cards);
 //!
 //! // Deal cards until the cut card is reached.
 //! while !shoe.has_reached_cut_card() {
@@ -26,15 +35,9 @@
 //!         let _ = card;
 //!     }
 //! }
-//!
-//! // Reshuffle 3 times for the next session.
-//! shoe.shuffle(3);
-//! shoe.cut(0.75);
 //! ```
 
 use kev::CardInt;
-use rand::rng;
-use rand::seq::SliceRandom;
 
 /// A standard 52-card deck in suit order: spades, hearts, diamonds, clubs.
 pub const DECK: [Card; 52] = [
@@ -113,33 +116,6 @@ pub struct Shoe {
 }
 
 impl Shoe {
-    /// Create a new shoe with `num_decks` standard 52-card decks. The cut card
-    /// is placed at the end of the shoe. Call [`Shoe::cut`] before dealing to
-    /// set the cut position and enable dealing.
-    ///
-    /// # Panics
-    /// Panics if `num_decks` is zero.
-    #[must_use]
-    pub fn new(num_decks: usize) -> Self {
-        assert!(num_decks > 0, "a shoe must contain at least one deck");
-
-        let capacity: usize = num_decks * DECK.len();
-        let mut cards: Vec<Card> = Vec::with_capacity(capacity + 1);
-
-        for _ in 0..num_decks {
-            cards.extend_from_slice(&DECK);
-        }
-        cards.shuffle(&mut rng());
-        cards.push(Card::Cut);
-        cards.swap(capacity, 0);
-
-        Self {
-            cards,
-            cursor: 0,
-            cut_pos: 0,
-        }
-    }
-
     /// How many cards remain to be dealt.
     #[cfg(test)]
     #[must_use]
@@ -148,9 +124,7 @@ impl Shoe {
     }
 
     /// Returns `true` when the cut card has been reached, signalling that the
-    /// current hand is the last before a reshuffle is required. Also returns
-    /// `true` before [`Shoe::cut`] has been called, since the shoe is not yet
-    /// ready to deal.
+    /// current hand is the last before a reshuffle is required.
     #[must_use]
     pub fn has_reached_cut_card(&self) -> bool {
         self.cursor <= self.cut_pos
@@ -158,7 +132,7 @@ impl Shoe {
 
     /// Deal the next card from the shoe, returning it by value.
     /// Returns `Some(Card::Cut)` when the cut card is dealt, and `None` when
-    /// the shoe is fully exhausted or [`Shoe::cut`] has not yet been called.
+    /// the shoe is fully exhausted.
     pub fn deal(&mut self) -> Option<Card> {
         if self.cursor > 0 {
             let card: Card = self.cards[self.cursor];
@@ -167,64 +141,6 @@ impl Shoe {
         } else {
             None
         }
-    }
-
-    /// Shuffle all cards `n` times, move the cut card to the end of the shoe,
-    /// and reset both the cursor and cut position, disabling dealing until
-    /// [`Shoe::cut`] is called to place the cut card and restore the cursor.
-    ///
-    /// # Panics
-    /// Panics if `n` is zero.
-    pub fn shuffle(&mut self, n: u8) {
-        assert!(n > 0, "shuffle count must be at least 1");
-        let mut rng = rng();
-        for _ in 0..n {
-            self.cards.shuffle(&mut rng);
-        }
-
-        let cut = self.cards.iter().position(|&x| x == Card::Cut).unwrap();
-        self.cards.swap(cut, 0);
-
-        self.cursor = 0;
-        self.cut_pos = 0;
-    }
-
-    /// Place the cut card at a position determined by the penetration ratio.
-    ///
-    /// `pen` is the penetration ratio: the fraction of the shoe dealt before
-    /// reshuffling. For example, `0.75` places the cut card 75% of the way
-    /// through the shoe, leaving 25% undealt.
-    ///
-    /// The cut card must be at the end of the shoe before this is called, as
-    /// guaranteed by [`Shoe::new`] and [`Shoe::shuffle`]. Call this method
-    /// after shuffling to enable dealing.
-    ///
-    /// # Panics
-    /// Panics if `pen` is not in the range `[0.5, 1.0]`.
-    /// Panics if the cut card is not at the end of the shoe.
-    pub fn cut(&mut self, pen: f32) {
-        assert!(
-            (0.5..=1.0).contains(&pen),
-            "penetration ratio must be in the range [0.5, 1.0]"
-        );
-
-        assert!(
-            self.cards[0] == Card::Cut,
-            "cut card must be at the end of the shoe; call shuffle first"
-        );
-
-        let last = self.cards.len() - 1;
-        // pen is asserted in [0.5, 1.0]; result is non-negative, fractional truncation is intentional
-        #[allow(
-            clippy::cast_precision_loss,
-            clippy::cast_sign_loss,
-            clippy::cast_possible_truncation
-        )]
-        let cut_pos = ((1.0 - pen) * last as f32) as usize;
-        self.cards.swap(0, cut_pos);
-
-        self.cursor = last;
-        self.cut_pos = cut_pos;
     }
 
     /// Discard the next `n` cards from the shoe without returning them.
@@ -275,52 +191,28 @@ impl From<Vec<Card>> for Shoe {
 mod shoe_tests {
     use super::*;
 
+    fn make_shoe(num_decks: usize, cut_card_idx: usize) -> Shoe {
+        let mut cards: Vec<Card> = Vec::with_capacity(num_decks * DECK.len() + 1);
+        cards.push(Card::Cut);
+        for _ in 0..num_decks {
+            cards.extend_from_slice(&DECK);
+        }
+        cards.swap(0, cut_card_idx);
+        Shoe::from(cards)
+    }
+
     #[test]
     fn correct_card_count() {
         for n in [1, 4, 6, 8] {
-            let mut shoe = Shoe::new(n);
-            shoe.cut(0.5);
+            let shoe = make_shoe(n, n * 26);
             assert_eq!(shoe.remaining(), n * 52);
         }
     }
 
     #[test]
-    #[should_panic(expected = "at least one deck")]
-    fn zero_decks_panics() {
-        let _ = Shoe::new(0);
-    }
-
-    #[test]
-    fn deal_returns_none_before_cut() {
-        let mut shoe = Shoe::new(1);
-        assert!(shoe.deal().is_none());
-    }
-
-    #[test]
-    #[should_panic(expected = "shuffle count must be at least 1")]
-    fn zero_shuffles_panics() {
-        let mut shoe = Shoe::new(1);
-        shoe.shuffle(0);
-    }
-
-    #[test]
-    #[should_panic(expected = "cut card must be at the end of the shoe")]
-    fn cut_without_shuffle_after_cut_panics() {
-        let mut shoe = Shoe::new(1);
-        shoe.cut(0.75);
-        shoe.cut(0.75);
-    }
-
-    #[test]
-    fn has_reached_cut_card_initially() {
-        let shoe = Shoe::new(1);
-        assert!(shoe.has_reached_cut_card());
-    }
-
-    #[test]
     fn has_reached_cut_card_after_dealing_past_cut() {
-        let mut shoe = Shoe::new(8);
-        shoe.cut(0.965);
+        // 8-deck shoe with cut card at index 14 (~96.5% penetration)
+        let mut shoe = make_shoe(8, 14);
         for _ in 0..402 {
             assert!(shoe.deal().is_some());
         }
@@ -332,16 +224,14 @@ mod shoe_tests {
 
     #[test]
     fn deal_returns_card() {
-        let mut shoe = Shoe::new(1);
-        shoe.cut(0.5);
+        let mut shoe = make_shoe(1, 26);
         let _: Card = shoe.deal().expect("shoe should have cards");
         assert_eq!(shoe.remaining(), 51);
     }
 
     #[test]
     fn exhausted_shoe_returns_none() {
-        let mut shoe = Shoe::new(1);
-        shoe.cut(1.0);
+        let mut shoe = make_shoe(1, 0);
         for _ in 0..52 {
             assert!(shoe.deal().is_some());
         }
@@ -350,42 +240,15 @@ mod shoe_tests {
     }
 
     #[test]
-    fn shuffle_and_cut_restores_full_shoe() {
-        let mut shoe = Shoe::new(1);
-        shoe.cut(0.75);
-        for _ in 0..10 {
-            assert!(shoe.deal().is_some());
-        }
-        shoe.shuffle(1);
-        shoe.cut(0.75);
-        assert_eq!(shoe.remaining(), 52);
-    }
-
-    #[test]
-    #[should_panic(expected = "penetration ratio must be in the range [0.5, 1.0]")]
-    fn low_pen_panics() {
-        let mut shoe = Shoe::new(1);
-        shoe.cut(0.49);
-    }
-
-    #[test]
-    #[should_panic(expected = "penetration ratio must be in the range [0.5, 1.0]")]
-    fn high_pen_panics() {
-        let mut shoe = Shoe::new(1);
-        shoe.cut(1.01);
-    }
-
-    #[test]
     fn burn_reduces_remaining() {
-        let mut shoe = Shoe::new(1);
-        shoe.cut(0.5);
+        let mut shoe = make_shoe(1, 26);
         shoe.burn(5);
         assert_eq!(shoe.remaining(), 47);
     }
 
     #[test]
     fn from_vec_initial_state() {
-        // vec: [A, Cut, B]  →  cursor = 2 (last index), cut_pos = 1
+        // vec: [A, Cut, B]  ->  cursor = 2 (last index), cut_pos = 1
         let cards = vec![
             Card::Play(CardInt::CardAs),
             Card::Cut,
@@ -412,7 +275,7 @@ mod shoe_tests {
 
     #[test]
     fn from_vec_has_reached_cut_card_after_dealing_past_cut() {
-        // [A, B, Cut, C, D]  →  cursor = 4, cut_pos = 2
+        // [A, B, Cut, C, D]  ->  cursor = 4, cut_pos = 2
         let cards = vec![
             Card::Play(CardInt::CardAs),
             Card::Play(CardInt::CardKs),
@@ -428,35 +291,6 @@ mod shoe_tests {
         assert!(shoe.has_reached_cut_card()); // 2 = 2
         assert!(shoe.deal().is_some()); // cursor = 1
         assert!(shoe.has_reached_cut_card()); // 1 < 2
-    }
-
-    #[test]
-    fn stub_size_is_zero_before_cut() {
-        let shoe = Shoe::new(1);
-        assert_eq!(shoe.stub_size(), 0);
-    }
-
-    #[test]
-    fn stub_size_reflects_penetration() {
-        // 1-deck shoe: last index = 52; cut_pos = (1.0 - 0.75) * 52 = 13
-        let mut shoe = Shoe::new(1);
-        shoe.cut(0.75);
-        assert_eq!(shoe.stub_size(), 13);
-    }
-
-    #[test]
-    fn stub_size_is_zero_at_full_penetration() {
-        let mut shoe = Shoe::new(1);
-        shoe.cut(1.0);
-        assert_eq!(shoe.stub_size(), 0);
-    }
-
-    #[test]
-    fn stub_size_is_zero_after_shuffle() {
-        let mut shoe = Shoe::new(1);
-        shoe.cut(0.75);
-        shoe.shuffle(1);
-        assert_eq!(shoe.stub_size(), 0);
     }
 
     #[test]

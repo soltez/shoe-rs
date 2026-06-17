@@ -2,16 +2,25 @@
 
 Playing card dealing shoe library for Rust.
 
-A multi-deck card dealing shoe as used in casino table games such as blackjack and baccarat. Supports shuffling, cut card placement, dealing, and burning cards.
+A multi-deck card dealing shoe as used in casino table games such as blackjack and baccarat. Deals and burns cards, tracks the cut card position. Shuffling and cut card placement are the caller's responsibility.
 
 ## Usage
 
 ```rust
-use shoe::{Card, Shoe};
+use shoe::{Card, Shoe, DECK};
 
-// Create a 6-deck shoe, shuffle, and place the cut card at 75% penetration.
-let mut shoe = Shoe::new(6);
-shoe.shuffle_and_cut(0.75);
+// Build a 6-deck shoe, shuffle with your own RNG, place the cut card at 75% penetration.
+let mut cards: Vec<Card> = Vec::new();
+for _ in 0..6 {
+    cards.extend_from_slice(&DECK);
+}
+// Shuffle cards here with your own RNG, then place the cut card.
+let cut_idx = cards.len() / 4;
+let last_idx = cards.len();
+cards.push(Card::Cut);
+cards.swap(cut_idx, last_idx);
+
+let mut shoe = Shoe::from(cards);
 
 // Deal cards until the cut card is reached.
 while !shoe.has_reached_cut_card() {
@@ -19,9 +28,6 @@ while !shoe.has_reached_cut_card() {
         let _ = card;
     }
 }
-
-// Reshuffle for the next session.
-shoe.shuffle_and_cut(0.75);
 ```
 
 ## Types
