@@ -33,7 +33,6 @@
 //! ```
 
 use kev::CardInt;
-use num_traits::cast::ToPrimitive;
 use rand::rng;
 use rand::seq::SliceRandom;
 
@@ -215,10 +214,13 @@ impl Shoe {
         );
 
         let last = self.cards.len() - 1;
-        let shoe_len = last.to_f32().expect("shoe length fits in f32");
-        let cut_pos = ((1.0 - pen) * shoe_len)
-            .to_usize()
-            .expect("cut position fits in usize");
+        // pen is asserted in [0.5, 1.0]; result is non-negative, fractional truncation is intentional
+        #[allow(
+            clippy::cast_precision_loss,
+            clippy::cast_sign_loss,
+            clippy::cast_possible_truncation
+        )]
+        let cut_pos = ((1.0 - pen) * last as f32) as usize;
         self.cards.swap(0, cut_pos);
 
         self.cursor = last;
